@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Workout Timer</title>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+  <style> body { margin: 0; background: #EDEDE8; } </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ---- Audio: short beeps via Web Audio API (no files needed) ----
+let audioCtx = null;
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+async function beep(freq = 880, duration = 0.15, volume = 0.4) {
+  try {
+    const ctx = getCtx();
+    if (ctx.state === "suspended") await ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch (e) {}
+}
+const countdownBeep = () => beep(660, 0.12, 0.3);   // last 3 seconds
+const changeBeep = () => { beep(1046, 0.22, 0.5); }; // switch exercise
+const doneBeep = () => { beep(523, 0.2); setTimeout(() => beep(784, 0.2), 220); setTimeout(() => beep(1046, 0.4), 440); };
+
+const ROUTINES = {
+  CORE: {
+    exercises: [
+      "Advanced bird frog (left)", "Advanced bird frog (right)", "Mountain Climbers Tempo",
+      "Walk Outs", "Toe touches", "Row ins", "Glute bridge", "Cross crunches",
+      "Reverse plank", "Frog glute bridge", "Superman", "Spiderman plank",
+      "Mountain Climbers slow", "Heel touches hold", "Side plank pull left",
+      "Side plank pull right", "Plank extreme", "Cool down",
+    ],
+    rounds: 1, workSec: 30, restSec: 0,
+  },
+  Mobility: {
+    exercises: ["Quads", "Hamstring", "Inner Hip", "Glutes", "Quads side-down", "Banana stretch"],
+    rounds: 2, workSec: 60, restSec: 5,
+  },
+  "Knee strength": {
+    exercises: ["Side-runs", "Hip-lift one-leg", "Stand-up one-leg", "Side-steps", "Lunge ups"],
+    rounds: 3, workSec: 60, restSec: 30,
+  },
+};
+
+function CalisthenicsTimer() {
+  const [routine, setRoutine] = useState("CORE");
+  const [exercises, setExercises] = useState(ROUTINES.CORE.exercises);
+  const [newName, setNewName] = useState("");
+  const [workSec, setWorkSec] = useState(ROUTINES.CORE.workSec);
+  const [restSec, setRestSec] = useState(ROUTINES.CORE.restSec);
+  const [rounds, setRounds] = useState(ROUTINES.CORE.rounds);
+
+  const loadRoutine = (name) => {
+    const r = ROUTINES[name];
+    setRoutine(name);
+    setExercises(r.exercises);
+    setWorkSec(r.workSec);
+    setRestSec(r.restSec);
+    setRounds(r.rounds);
+  };
+
+  // phase: "idle" | "work" | "rest" | "done"
+  const [phase, setPhase] = useState("idle");
+  const [running, setRunning] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [exIndex, setExIndex] = useState(0);
+  const [round, setRound] = useState(1);
+  const tickRef = useRef(null);
+
+  const start = () => {
+    if (exercises.length === 0) return;
+    getCtx(); // unlock audio on user gesture
+    setExIndex(0);
+    setRound(1);
+    setPhase("work");
+    setTimeLeft(workSec);
+    setRunning(true);
+    changeBeep();
+  };
+
+  const advance = useCallback(() => {
+    if (phase === "work") {
+      const lastExercise = exIndex === exercises.length - 1;
+      const lastRound = round === rounds;
+      if (lastExercise && lastRound) {
+        setPhase("done");
+        setRunning(false);
+        doneBeep();
+        return;
+      }
+      if (restSec === 0) {
+        // no rest: jump straight to the next exercise
+        if (lastExercise) {
+          setExIndex(0);
+          setRound((r) => r + 1);
+        } else {
+          setExIndex((i) => i + 1);
+        }
+        setTimeLeft(workSec);
+        changeBeep();
+        return;
+      }
+      setPhase("rest");
+      setTimeLeft(restSec);
+      changeBeep();
+    } else if (phase === "rest") {
+      if (exIndex === exercises.length - 1) {
+        setExIndex(0);
+        setRound((r) => r + 1);
+      } else {
+        setExIndex((i) => i + 1);
+      }
+      setPhase("work");
+      setTimeLeft(workSec);
+      changeBeep();
+    }
+  }, [phase, exIndex, round, rounds, restSec, workSec, exercises.length]);
+
+  useEffect(() => {
+    if (!running) return;
+    tickRef.current = setInterval(() => {
+      setTimeLeft((t) => (t <= 1 ? 0 : t - 1));
+    }, 1000);
+    return () => clearInterval(tickRef.current);
+  }, [running, phase]);
+
+  useEffect(() => {
+    if (running && timeLeft >= 1 && timeLeft <= 3 && (phase === "work" || phase === "rest")) {
+      countdownBeep(); // beeps at 3, 2, 1 remaining
+    }
+  }, [timeLeft, running, phase]);
+
+  useEffect(() => {
+    if (running && timeLeft === 0 && (phase === "work" || phase === "rest")) {
+      advance();
+    }
+  }, [timeLeft, running, phase, advance]);
+
+  const reset = () => {
+    setRunning(false);
+    setPhase("idle");
+    setTimeLeft(0);
+    setExIndex(0);
+    setRound(1);
+  };
+
+  const skip = () => { if (phase === "work" || phase === "rest") { setTimeLeft(0); } };
+
+  // ---- exercise list editing ----
+  const addExercise = () => {
+    const n = newName.trim();
+    if (!n) return;
+    setExercises((ex) => [...ex, n]);
+    setNewName("");
+  };
+  const removeExercise = (i) => setExercises((ex) => ex.filter((_, j) => j !== i));
+  const move = (i, dir) => {
+    setExercises((ex) => {
+      const j = i + dir;
+      if (j < 0 || j >= ex.length) return ex;
+      const copy = [...ex];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
+  };
+
+  const nextUp = () => {
+    if (phase === "rest") {
+      return exIndex === exercises.length - 1 ? exercises[0] : exercises[exIndex + 1];
+    }
+    if (phase === "work") {
+      const lastEx = exIndex === exercises.length - 1;
+      if (lastEx && round === rounds) return null;
+      return lastEx ? exercises[0] : exercises[exIndex + 1];
+    }
+    return null;
+  };
+
+  const total = phase === "work" ? workSec : restSec;
+  const progress = total > 0 ? (total - timeLeft) / total : 0;
+
+  const C = {
+    bg: "#EDEDE8",        // concrete
+    ink: "#1B2432",       // steel navy
+    accent: "#F25C05",    // park-equipment orange
+    rest: "#3E7CB1",      // rest blue
+    faint: "#9AA0A6",
+  };
+
+  const inSession = phase === "work" || phase === "rest" || phase === "done";
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: "'Archivo', 'Helvetica Neue', sans-serif", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 16px" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@500&display=swap');
+        button { cursor: pointer; font-family: inherit; }
+        button:focus-visible, input:focus-visible { outline: 3px solid #F25C05; outline-offset: 2px; }
+        input { font-family: inherit; }
+      `}</style>
+
+      <div style={{ width: "100%", maxWidth: 480 }}>
+
+        {!inSession && (
+          <>
+            {/* Routine picker */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              {Object.keys(ROUTINES).map((name) => (
+                <button
+                  key={name}
+                  onClick={() => loadRoutine(name)}
+                  style={{ flex: 1, padding: "10px 4px", fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px", border: `2px solid ${C.ink}`, borderRadius: 8, background: routine === name ? C.ink : "#fff", color: routine === name ? "#fff" : C.ink }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+
+            {/* Settings */}
+            <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+              {[
+                { label: "Work (s)", val: workSec, set: setWorkSec, min: 5 },
+                { label: "Rest (s)", val: restSec, set: setRestSec, min: 0 },
+                { label: "Rounds", val: rounds, set: setRounds, min: 1 },
+              ].map((f) => (
+                <label key={f.label} style={{ flex: 1, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  {f.label}
+                  <input
+                    type="number"
+                    min={f.min}
+                    value={f.val}
+                    onChange={(e) => f.set(Math.max(f.min, parseInt(e.target.value) || f.min))}
+                    style={{ display: "block", width: "100%", marginTop: 4, padding: "10px 8px", fontSize: 18, fontFamily: "'IBM Plex Mono', monospace", border: `2px solid ${C.ink}`, borderRadius: 6, background: "#fff", boxSizing: "border-box" }}
+                  />
+                </label>
+              ))}
+            </div>
+
+            {/* Exercise list */}
+            <div style={{ border: `2px solid ${C.ink}`, borderRadius: 8, overflow: "hidden", marginBottom: 16, background: "#fff" }}>
+              {exercises.map((ex, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: i < exercises.length - 1 ? `1px solid ${C.bg}` : "none" }}>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: C.faint, fontSize: 13, width: 20 }}>{i + 1}</span>
+                  <span style={{ flex: 1, fontWeight: 600 }}>{ex}</span>
+                  <button onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" style={{ border: "none", background: "none", fontSize: 16, opacity: i === 0 ? 0.25 : 1 }}>↑</button>
+                  <button onClick={() => move(i, 1)} disabled={i === exercises.length - 1} aria-label="Move down" style={{ border: "none", background: "none", fontSize: 16, opacity: i === exercises.length - 1 ? 0.25 : 1 }}>↓</button>
+                  <button onClick={() => removeExercise(i)} aria-label="Remove" style={{ border: "none", background: "none", fontSize: 16, color: C.accent }}>✕</button>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, padding: 10, background: C.bg }}>
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addExercise()}
+                  placeholder="Add exercise…"
+                  style={{ flex: 1, padding: "8px 10px", border: `2px solid ${C.ink}`, borderRadius: 6, fontSize: 15 }}
+                />
+                <button onClick={addExercise} style={{ padding: "8px 16px", border: `2px solid ${C.ink}`, borderRadius: 6, background: C.ink, color: "#fff", fontWeight: 700 }}>Add</button>
+              </div>
+            </div>
+
+            <button
+              onClick={start}
+              disabled={exercises.length === 0}
+              style={{ width: "100%", padding: "16px", fontSize: 20, fontVariationSettings: "'wdth' 120, 'wght' 900", textTransform: "uppercase", letterSpacing: "1px", background: C.accent, color: "#fff", border: "none", borderRadius: 8, opacity: exercises.length === 0 ? 0.4 : 1 }}
+            >
+              Start
+            </button>
+            <button
+              onClick={() => changeBeep()}
+              style={{ width: "100%", marginTop: 10, padding: "10px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", background: "none", color: C.faint, border: `2px solid ${C.faint}`, borderRadius: 8 }}
+            >
+              Test beep
+            </button>
+          </>
+        )}
+
+        {(phase === "work" || phase === "rest") && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: phase === "work" ? C.accent : C.rest, marginBottom: 6 }}>
+              {phase === "work" ? `Work · Round ${round}/${rounds}` : "Rest"}
+            </div>
+            <div style={{ fontVariationSettings: "'wdth' 110, 'wght' 900", fontSize: 34, textTransform: "uppercase", minHeight: 44 }}>
+              {phase === "work" ? exercises[exIndex] : "Breathe"}
+            </div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 96, fontWeight: 500, lineHeight: 1.1, color: timeLeft <= 3 ? C.accent : C.ink }}>
+              {timeLeft}
+            </div>
+            {/* progress bar */}
+            <div style={{ height: 8, background: "#fff", borderRadius: 4, overflow: "hidden", margin: "12px 0 8px", border: `1px solid ${C.faint}` }}>
+              <div style={{ height: "100%", width: `${progress * 100}%`, background: phase === "work" ? C.accent : C.rest, transition: "width 1s linear" }} />
+            </div>
+            {nextUp() && (
+              <div style={{ color: C.faint, fontSize: 14, marginBottom: 20 }}>
+                Next: <strong style={{ color: C.ink }}>{nextUp()}</strong>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16 }}>
+              <button onClick={() => setRunning((r) => !r)} style={{ padding: "12px 24px", fontSize: 16, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 8, background: running ? "#fff" : C.ink, color: running ? C.ink : "#fff" }}>
+                {running ? "Pause" : "Resume"}
+              </button>
+              <button onClick={skip} style={{ padding: "12px 24px", fontSize: 16, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.ink}`, borderRadius: 8, background: "#fff" }}>
+                Skip
+              </button>
+              <button onClick={reset} style={{ padding: "12px 24px", fontSize: 16, fontWeight: 800, textTransform: "uppercase", border: `2px solid ${C.faint}`, borderRadius: 8, background: "none", color: C.faint }}>
+                Reset
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase === "done" && (
+          <div style={{ textAlign: "center", padding: "40px 0" }}>
+            <div style={{ fontVariationSettings: "'wdth' 120, 'wght' 900", fontSize: 40, textTransform: "uppercase", color: C.accent }}>Done</div>
+            <p style={{ color: C.faint }}>{rounds} round{rounds > 1 ? "s" : ""} · {exercises.length} exercises</p>
+            <button onClick={reset} style={{ marginTop: 12, padding: "14px 32px", fontSize: 18, fontWeight: 800, textTransform: "uppercase", background: C.ink, color: "#fff", border: "none", borderRadius: 8 }}>
+              Back to setup
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<CalisthenicsTimer />);
+  </script>
+</body>
+</html>
