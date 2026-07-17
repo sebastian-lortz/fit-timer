@@ -165,6 +165,28 @@ function CalisthenicsTimer() {
 
   const skip = () => { if (phase === "work" || phase === "rest") { setTimeLeft(0); } };
 
+  // ---- keep screen awake during the workout ----
+  const wakeLockRef = useRef(null);
+  useEffect(() => {
+    const active = phase === "work" || phase === "rest";
+    const acquire = async () => {
+      try {
+        if (active && "wakeLock" in navigator && document.visibilityState === "visible") {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        }
+      } catch (e) {}
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") acquire(); };
+    if (active) {
+      acquire();
+      document.addEventListener("visibilitychange", onVisibility);
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => {}); wakeLockRef.current = null; }
+    };
+  }, [phase]);
+
   // ---- exercise list editing ----
   const addExercise = () => {
     const n = newName.trim();
