@@ -81,6 +81,13 @@ function CalisthenicsTimer() {
   const [restSec, setRestSec] = useState(ROUTINES.CORE.restSec);
   const [rounds, setRounds] = useState(ROUTINES.CORE.rounds);
 
+  const [speechOn, setSpeechOn] = useState(true);
+  const speechOnRef = useRef(true);
+  const toggleSpeech = () => {
+    setSpeechOn((v) => { speechOnRef.current = !v; return !v; });
+  };
+  const say = (text) => { if (speechOnRef.current) speak(text); };
+
   const loadRoutine = (name) => {
     const r = ROUTINES[name];
     setRoutine(name);
@@ -107,7 +114,7 @@ function CalisthenicsTimer() {
     setTimeLeft(workSec);
     setRunning(true);
     changeBeep();
-    speak(exercises[0]);
+    say(exercises[0]);
   };
 
   const advance = useCallback(() => {
@@ -131,13 +138,13 @@ function CalisthenicsTimer() {
         }
         setTimeLeft(workSec);
         changeBeep();
-        speak(nextName);
+        say(nextName);
         return;
       }
       setPhase("rest");
       setTimeLeft(restSec);
       changeBeep();
-      speak("Rest. Next: " + (lastExercise ? exercises[0] : exercises[exIndex + 1]));
+      say("Rest. Next: " + (lastExercise ? exercises[0] : exercises[exIndex + 1]));
     } else if (phase === "rest") {
       const nextName = exIndex === exercises.length - 1 ? exercises[0] : exercises[exIndex + 1];
       if (exIndex === exercises.length - 1) {
@@ -149,7 +156,7 @@ function CalisthenicsTimer() {
       setPhase("work");
       setTimeLeft(workSec);
       changeBeep();
-      speak(nextName);
+      say(nextName);
     }
   }, [phase, exIndex, round, rounds, restSec, workSec, exercises.length]);
 
@@ -324,29 +331,37 @@ function CalisthenicsTimer() {
             >
               Start
             </button>
-            <button
-              onClick={() => changeBeep()}
-              style={{ width: "100%", marginTop: 10, padding: "10px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", background: "none", color: C.faint, border: `2px solid ${C.faint}`, borderRadius: 8 }}
-            >
-              Test beep
-            </button>
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <button
+                onClick={() => changeBeep()}
+                style={{ flex: 1, padding: "10px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", background: "none", color: C.faint, border: `2px solid ${C.faint}`, borderRadius: 8 }}
+              >
+                Test beep
+              </button>
+              <button
+                onClick={toggleSpeech}
+                style={{ flex: 1, padding: "10px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", background: speechOn ? C.ink : "none", color: speechOn ? "#fff" : C.faint, border: `2px solid ${speechOn ? C.ink : C.faint}`, borderRadius: 8 }}
+              >
+                Voice: {speechOn ? "On" : "Off"}
+              </button>
+            </div>
           </>
         )}
 
         {(phase === "work" || phase === "rest") && (
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: phase === "work" ? C.accent : C.rest, marginBottom: 6 }}>
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "80vh" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: phase === "work" ? C.accent : C.rest, marginBottom: 12 }}>
               {phase === "work" ? `Work · Round ${round}/${rounds}` : "Rest"}
             </div>
-            <div style={{ fontVariationSettings: "'wdth' 110, 'wght' 900", fontSize: 34, textTransform: "uppercase", minHeight: 44 }}>
+            <div style={{ fontVariationSettings: "'wdth' 110, 'wght' 900", fontSize: 52, lineHeight: 1.05, textTransform: "uppercase", minHeight: 60, marginBottom: 20 }}>
               {phase === "work" ? exercises[exIndex] : "Breathe"}
             </div>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 96, fontWeight: 500, lineHeight: 1.1, color: timeLeft <= 3 ? C.accent : C.ink }}>
-              {timeLeft}
-            </div>
             {/* progress bar */}
-            <div style={{ height: 8, background: "#fff", borderRadius: 4, overflow: "hidden", margin: "12px 0 8px", border: `1px solid ${C.faint}` }}>
+            <div style={{ height: 36, background: "#fff", borderRadius: 8, overflow: "hidden", margin: "0 0 12px", border: `2px solid ${C.ink}` }}>
               <div style={{ height: "100%", width: `${progress * 100}%`, background: phase === "work" ? C.accent : C.rest, transition: "width 1s linear" }} />
+            </div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 32, fontWeight: 500, lineHeight: 1.1, color: timeLeft <= 3 ? C.accent : C.ink, marginBottom: 8 }}>
+              {timeLeft}
             </div>
             {nextUp() && (
               <div style={{ color: C.faint, fontSize: 14, marginBottom: 20 }}>
